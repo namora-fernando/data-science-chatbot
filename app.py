@@ -11,6 +11,11 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 # ── Load ENV ─────────────────────────────────────────
 load_dotenv()
 API_KEY = os.getenv("GOOGLE_API_KEY")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PDF_PATH = os.path.join(BASE_DIR, "bootcamp-guide-chatbot.pdf")
+FAISS_INDEX_PATH = os.path.join(BASE_DIR, "faiss_index")
+RETRIEVER_K = 2
+MAX_CONTEXT_CHARS = 2500
 
 # ── 1. Config Page ───────────────────────────────────
 st.set_page_config(page_title="Gemini Chatbot", layout="centered")
@@ -64,15 +69,15 @@ if "vectorstore" not in st.session_state:
         )
 
         # check whether the FAISS index is initialized or not
-        if os.path.exists("faiss_index"):
-            st.session_state.vectorstore = FAISS.load_local(
-                "faiss_index",
+        if os.path.exists(FAISS_INDEX_PATH):
+            vectorstore = FAISS.load_local(
+                FAISS_INDEX_PATH,
                 embeddings,
                 allow_dangerous_deserialization=True
             )
         else:
             # load RAG pdf
-            loader = PyPDFLoader("bootcamp-guide-chatbot.pdf")
+            loader = PyPDFLoader(PDF_PATH)
             documents = loader.load()
 
             # extract text from pdf and chunk the document
@@ -87,7 +92,7 @@ if "vectorstore" not in st.session_state:
             
             # save FAISS to the local disk, 
             # so not embedd from scratch if the program restarted
-            vectorstore.save_local("faiss_index")
+            vectorstore.save_local(FAISS_INDEX_PATH)
         
         # save the vectorstore as vector database
         st.session_state.vectorstore = vectorstore
@@ -135,9 +140,9 @@ if prompt: # only run below, if user send a chat (a prompt)
         st.markdown(prompt)
 
     # 3. retrieve the context from vector database
-    retriever = st.session_state.vectorstore.as_retriever(search_kwargs={"k": 3})
+    retriever = st.session_state.vectorstore.as_retriever(search_kwargs={"k": RETRIEVER_K})
     retrieved_docs = retriever.invoke(prompt)
-    context = "\n\n".join([doc.page_content for doc in retrieved_docs])
+    context = "\n\n".join([doc.page_content for doc in retrieved_docs])[:MAX_CONTEXT_CHARS]
 
     # 4. augmented the prompt
     augmented_prompt = f"""
@@ -154,8 +159,11 @@ if prompt: # only run below, if user send a chat (a prompt)
         2. Jika user bertanya dalam bahasa Inggris, tetap jawab dalam bahasa Indonesia
         3. Jawaban harus:
         - jelas
-        - terstruktur (boleh pakai bullet point kalau perlu)
-        - tidak terlalu panjang tapi tetap informatif
+        - singkat dan langsung menjawab inti pertanyaan
+        - 1 paragraf pendek untuk pertanyaan sederhana
+        - 2 paragraf pendek hanya jika perlu penjelasan tambahan
+        - rencanakan jawaban agar selesai utuh; jangan berhenti di tengah kalimat
+        - gunakan bullet point hanya kalau sangat membantu, maksimal 3 bullet pendek
 
         📚 PENGGUNAAN CONTEXT:
         - Gunakan konteks di bawah sebagai referensi utama
@@ -181,6 +189,8 @@ if prompt: # only run below, if user send a chat (a prompt)
         - Edukatif (seperti mentor bootcamp)
         - Tidak terlalu formal
         - Fokus ke "biar ngerti", bukan "biar keliatan pintar"
+        - Jangan memberi penutup panjang, checklist besar, atau daftar tambahan kecuali diminta user
+        - Lebih baik jawaban pendek tapi selesai, daripada banyak poin tapi terpotong
 
         ━━━━━━━━━━━━━━━━━━━
         📄 CONTEXT:
